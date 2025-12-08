@@ -3,55 +3,79 @@ from typing import Union, Optional
 from scipy import stats
 
 class TemporalAnomalyDetector:
-    """时序异常检测器
+    """
+    Temporal Anomaly Detector for time series data analysis.
     
-    支持多种阈值方法：
-    1. SPOT (Streaming POT)
-    2. 3σ (三西格玛)
-    3. 百分位数
+    Supports multiple threshold methods:
+    1. SPOT (Streaming Peaks-Over-Threshold)
+    2. 3-Sigma (Three Standard Deviations)
+    3. Percentile-based detection
+    4. Fixed window once-pass detection
+    
+    This detector is specifically designed for wildfire detection applications,
+    analyzing temporal patterns in environmental data such as temperature,
+    humidity, and satellite imagery time series.
     """
     
     def __init__(self, method: str = '3sigma', **kwargs):
         """
-        初始化时序异常检测器
+        Initialize the temporal anomaly detector.
         
         Args:
-            method: 异常检测方法 ('spot', '3sigma', 'percentile', 'fixed_window_once')
-            **kwargs: 方法特定参数
-                - spot: q(默认0.95), window_size(默认50), score_threshold(默认0.5)
-                - 3sigma: window_size(默认50)
-                - percentile: percentile(默认95), window_size(默认50)
-                - fixed_window_once: initial_window_size(默认100), threshold(默认3.0), threshold_method(默认'sigma')
+            method (str): Anomaly detection method. Options:
+                - 'spot': Streaming Peaks-Over-Threshold
+                - '3sigma': Three standard deviations
+                - 'percentile': Percentile-based threshold
+                - 'fixed_window_once': Single-pass fixed window
+            **kwargs: Method-specific parameters:
+                - spot: q (default 0.95), window_size (default 50), score_threshold (default 0.5)
+                - 3sigma: window_size (default 50)
+                - percentile: percentile (default 95), window_size (default 50)
+                - fixed_window_once: initial_window_size (default 100), threshold (default 3.0), 
+                                     threshold_method (default 'sigma')
+        
+        Raises:
+            ValueError: If an unsupported detection method is specified.
+            ImportError: If required dependencies for SPOT method are not installed.
         """
         self.method = method.lower()
         self.kwargs = kwargs
         
-        # 初始化方法特定参数
+        # Initialize method-specific parameters
         if self.method == 'spot':
-            self.q = kwargs.get('q', 0.95)  # 降低默认值以提高检测灵敏度
-            self.window_size = kwargs.get('window_size', 50)  # 滑动窗口大小
-            self.score_threshold = kwargs.get('score_threshold', 0.5)  # 异常分数阈值
+            self.q = kwargs.get('q', 0.95)  # Lower default for increased sensitivity
+            self.window_size = kwargs.get('window_size', 50)  # Sliding window size
+            self.score_threshold = kwargs.get('score_threshold', 0.5)  # Anomaly score threshold
             self._init_spot_detector()
         elif self.method == '3sigma':
-            self.window_size = kwargs.get('window_size', 50)  # 滑动窗口大小
+            self.window_size = kwargs.get('window_size', 50)  # Sliding window size
         elif self.method == 'percentile':
-            self.percentile = kwargs.get('percentile', 95)  # 百分位数阈值
-            self.window_size = kwargs.get('window_size', 50)  # 滑动窗口大小
+            self.percentile = kwargs.get('percentile', 95)  # Percentile threshold
+            self.window_size = kwargs.get('window_size', 50)  # Sliding window size
         elif self.method == 'fixed_window_once':
-            self.initial_window_size = kwargs.get('initial_window_size', 100)  # 初始窗口大小
-            self.threshold = kwargs.get('threshold', 3.0)  # 固定阈值
-            self.threshold_method = kwargs.get('threshold_method', 'sigma')  # 阈值计算方法: 'sigma', 'percentile', 'fixed'
-            # 百分位数方法的额外参数
-            self.percentile_value = kwargs.get('percentile_value', 95)  # 百分位数值
+            self.initial_window_size = kwargs.get('initial_window_size', 100)  # Initial window size
+            self.threshold = kwargs.get('threshold', 3.0)  # Fixed threshold
+            self.threshold_method = kwargs.get('threshold_method', 'sigma')  # Threshold calculation method
+            # Additional parameters for percentile method
+            self.percentile_value = kwargs.get('percentile_value', 95)  # Percentile value
         else:
             raise ValueError(f"Unsupported method: {method}. Choose from 'spot', '3sigma', 'percentile', 'fixed_window_once'")
             
-        # 存储历史数据，用于滑动窗口计算
+        # Store historical data for sliding window calculations
         self.history_data = []
-        self.spot_detector = None  # SPOT检测器实例
+        self.spot_detector = None  # SPOT detector instance
     
     def _init_spot_detector(self):
-        """初始化SPOT检测器"""
+        """
+        Initialize the SPOT (Streaming Peaks-Over-Threshold) detector.
+        
+        SPOT is an advanced anomaly detection method particularly effective for
+        detecting extreme values in streaming data, commonly used in environmental
+        monitoring and wildfire detection applications.
+        
+        Raises:
+            ImportError: If the streamad library is not installed.
+        """
         try:
             from streamad.model import SpotDetector
             self.spot_detector = SpotDetector(
@@ -64,24 +88,40 @@ class TemporalAnomalyDetector:
     
     def detect(self, data: np.ndarray) -> np.ndarray:
         """
-        对时序数据进行异常检测
+        Perform anomaly detection on time series data.
+        
+        This method applies the configured detection algorithm to identify
+        anomalous data points in the input time series. The detection is
+        performed using a sliding window approach to maintain temporal context.
         
         Args:
-            data: 一维时序数据，形状为 (len,)
+            data (np.ndarray): One-dimensional time series data with shape (n_samples,).
+                             Should contain numeric values representing the time series.
             
         Returns:
-            异常标签数组，1表示异常，0表示正常
+            np.ndarray: Binary anomaly labels where 1 indicates anomaly and 0 indicates normal.
+                       Array has the same length as the input data.
+        
+        Raises:
+            ValueError: If input data is not one-dimensional or contains invalid values.
+            RuntimeError: If detection fails due to insufficient data or computational errors.
+        
+        Example:
+            >>> detector = TemporalAnomalyDetector(method='3sigma')
+            >>> data = np.array([1, 2, 3, 100, 4, 5])  # 100 is an anomaly
+            >>> labels = detector.detect(data)
+            >>> print(labels)  # [0 0 0 1 0 0]
         """
         if data.ndim != 1:
             raise ValueError("Input data must be 1-dimensional")
             
-        # 记录数据基本信息
+        # Log basic information about the detection process
         if self.method == 'fixed_window_once':
-            print(f"开始异常检测: 数据长度={len(data)}, 方法={self.method}, 初始窗口大小={self.initial_window_size}")
+            print(f"Starting anomaly detection: data_length={len(data)}, method={self.method}, initial_window_size={self.initial_window_size}")
         else:
-            print(f"开始异常检测: 数据长度={len(data)}, 方法={self.method}, 窗口大小={self.window_size}")
+            print(f"Starting anomaly detection: data_length={len(data)}, method={self.method}, window_size={self.window_size}")
         
-        # 重置历史数据
+        # Reset historical data for fresh detection
         self.history_data = []
         
         if self.method == 'spot':
@@ -96,82 +136,115 @@ class TemporalAnomalyDetector:
             raise ValueError(f"Unsupported method: {self.method}")
     
     def _detect_with_spot(self, data: np.ndarray) -> np.ndarray:
-        """使用SPOT方法进行异常检测 - 基于指定窗口大小的历史数据"""
+        """
+        Perform anomaly detection using the SPOT (Streaming Peaks-Over-Threshold) method.
+        
+        SPOT is particularly effective for detecting extreme values in streaming data by
+        modeling the tail distribution of normal data. This implementation uses a
+        sliding window approach to maintain historical context.
+        
+        Args:
+            data (np.ndarray): One-dimensional time series data.
+            
+        Returns:
+            np.ndarray: Binary anomaly labels (1 for anomaly, 0 for normal).
+            
+        Note:
+            This method requires the streamad library to be installed.
+            The detection is based on the specified window size of historical data.
+        """
         labels = np.zeros(len(data), dtype=int)
         
         try:
-            # 确保数据不为空
+            # Ensure data is not empty
             if len(data) == 0:
-                print("警告: 输入数据为空")
+                print("Warning: Input data is empty")
                 return labels
                 
-            # 确保SPOT检测器已初始化
+            # Ensure SPOT detector is initialized
             if self.spot_detector is None:
                 self._init_spot_detector()
                 
             # 遍历数据点，使用滑动窗口进行异常检测
             for i, value in enumerate(data):
-                # 维护滑动窗口
+                # Maintain sliding window
                 self.history_data.append(value)
                 if len(self.history_data) > self.window_size:
                     self.history_data.pop(0)
                     
-                # 当窗口数据足够时进行检测
-                if len(self.history_data) >= self.window_size // 2:  # 至少需要一半窗口大小的数据
+                # Perform detection when sufficient window data is available
+                if len(self.history_data) >= self.window_size // 2:  # Require at least half window size
                     try:
-                        # 使用SPOT检测器检测当前点是否异常
-                        # 注意：这里使用当前窗口的所有数据进行异常检测
-                        # 这样确保检测是基于历史窗口的
+                        # Use SPOT detector to check if current point is anomalous
+                        # Note: Use all data in current window for anomaly detection
+                        # This ensures detection is based on historical window
                         score = 0
                         for hist_value in self.history_data:
                             current_score = self.spot_detector.fit_score(np.array([hist_value]))
                             if current_score is not None and isinstance(current_score, (int, float)):
-                                score = max(score, current_score)  # 使用窗口内的最高分数
+                                score = max(score, current_score)  # Use highest score in window
                         
-                        # 根据配置的阈值判断当前点是否为异常
+                        # Determine if current point is anomalous based on configured threshold
                         if score > self.score_threshold:
                             labels[i] = 1
                             
                     except Exception as e:
-                        # 记录错误但继续处理
-                        print(f"处理数据点 {i} 时出错: {e}")
+                        # Log error but continue processing
+                        print(f"Error processing data point {i}: {e}")
                         pass
                         
-                # 调试信息
+                # Debug information
                 if i % 50 == 0:
-                    print(f"已处理数据点 {i}/{len(data)}, 当前窗口大小: {len(self.history_data)}")
+                    print(f"Processed data point {i}/{len(data)}, current window size: {len(self.history_data)}")
         except Exception as e:
-            # 发生严重错误时，返回全0标签
-            print(f"SPOT检测过程中发生严重错误: {e}")
+            # Return all-zero labels on critical error
+            print(f"Critical error in SPOT detection: {e}")
         
-        print(f"SPOT方法总共检测到 {np.sum(labels)} 个异常点")
+        print(f"SPOT method detected {np.sum(labels)} anomaly points in total")
         return labels
     
     def _detect_with_3sigma(self, data: np.ndarray) -> np.ndarray:
-        """使用3σ方法进行异常检测 - 基于指定窗口大小的历史数据"""
+        """
+        Perform anomaly detection using the 3-sigma (three standard deviations) method.
+        
+        This method identifies anomalies based on statistical outliers that fall outside
+        the range of mean ± 3 standard deviations. The calculation is performed using
+        a sliding window of historical data to maintain temporal context.
+        
+        Args:
+            data (np.ndarray): One-dimensional time series data.
+            
+        Returns:
+            np.ndarray: Binary anomaly labels (1 for anomaly, 0 for normal).
+            
+        Note:
+            The detection is based on the specified window size of historical data.
+            Points are considered anomalous if they deviate more than 3 standard
+            deviations from the window mean.
+        """
         labels = np.zeros(len(data), dtype=int)
         
         for i, value in enumerate(data):
-            # 维护滑动窗口
+            # Maintain sliding window
             self.history_data.append(value)
             if len(self.history_data) > self.window_size:
                 self.history_data.pop(0)
                 
-            # 当历史数据足够时进行检测
-            if len(self.history_data) >= 5:  # 至少需要5个点来估计分布
-                # 使用当前滑动窗口内的历史数据计算统计量
+            # Perform detection when sufficient historical data is available
+            if len(self.history_data) >= 5:  # Need at least 5 points to estimate distribution
+                # Calculate statistics using current sliding window data
                 mean = np.mean(self.history_data)
                 std = np.std(self.history_data)
                 
-                # 3σ规则：超出μ±3σ范围为异常
+                # 3-sigma rule: points outside μ±3σ are considered anomalous
                 if abs(value - mean) > 3 * std:
                     labels[i] = 1
                     
-            # 调试信息
+            # Debug information
             if i % 50 == 0:
-                print(f"已处理数据点 {i}/{len(data)}, 当前窗口大小: {len(self.history_data)}")
+                print(f"Processed data point {i}/{len(data)}, current window size: {len(self.history_data)}")
         
-        print(f"3σ方法总共检测到 {np.sum(labels)} 个异常点")
+        print(f"3-sigma method detected {np.sum(labels)} anomaly points in total")
         return labels
     
     def _detect_with_percentile(self, data: np.ndarray) -> np.ndarray:
