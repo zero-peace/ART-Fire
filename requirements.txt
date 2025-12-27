@@ -9,7 +9,7 @@ matplotlib>=3.3.0
 streamad>=0.1.0
 
 # Optional dependencies for advanced features
-torch>=1.9.0
+# torch>=1.9.0
 transformers>=4.20.0
 datasets>=2.0.0
 accelerate>=0.20.0

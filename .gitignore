@@ -96,3 +96,6 @@ temp/
 config.yaml
 config.json
 secrets.*
+
+# temp files
+temp.py
