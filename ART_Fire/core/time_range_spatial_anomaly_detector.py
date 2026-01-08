@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 import os
-from spatial_anomaly_detector import SpatialAnomalyDetector
+from .spatial_anomaly_detector import SpatialAnomalyDetector
 
 class TimeRangeSpatialAnomalyDetector:
     """时间段空间异常检测器
